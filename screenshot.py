@@ -4,15 +4,24 @@ import time
 from pynput import mouse, keyboard
 from upload import upload_to_ftp
 
-# 初始化计时和事件记录
-mouse_click_times = []  # 鼠标点击时间记录
-triple_click_time = None  # 记录三连击的开始时间
-capslock_pressed = False  # Caps Lock 是否处于按压状态
+# 初始化状态和事件记录
+capslock_pressed = False  # Caps Lock 是否按压状态
 screenshot_count = 1  # 截图计数
 TIME_WINDOW = 2  # 时间窗口（秒）
+wheel_click_times = []  # 存储鼠标滚轮单击事件时间
 
 def take_screenshot_and_upload(i, save_directory, ftp_folder):
-    """截取屏幕并上传"""
+    """
+    截取屏幕并上传
+
+    参数:
+    i (int): 截图的序号
+    save_directory (str): 保存截图的目录
+    ftp_folder (str): FTP 服务器上的文件夹
+
+    返回:
+    None
+    """
     screenshot_path = os.path.join(save_directory, f"screenshot_{i}.png")
     screenshot = pyautogui.screenshot()
     screenshot.save(screenshot_path)
@@ -22,56 +31,107 @@ def take_screenshot_and_upload(i, save_directory, ftp_folder):
     upload_to_ftp(screenshot_path, ftp_folder)
 
 def prune_old_events(event_times):
-    """移除时间窗口外的事件"""
+    """
+    移除时间窗口外的事件
+
+    参数:
+    event_times (list): 事件发生的时间列表
+
+    返回:
+    None
+    """
     current_time = time.time()
     event_times[:] = [t for t in event_times if current_time - t <= TIME_WINDOW]
 
-def detect_trigger(event_times, min_events, max_events):
-    """检测时间窗口内是否满足触发条件"""
+def detect_trigger(event_times, required_events):
+    """
+    检测时间窗口内是否满足触发条件
+
+    参数:
+    event_times (list): 事件发生的时间列表
+    required_events (int): 触发所需的事件数量
+
+    返回:
+    bool: 是否满足触发条件
+    """
     prune_old_events(event_times)
-    return min_events <= len(event_times) <= max_events
+    return len(event_times) >= required_events
 
 def on_mouse_click(x, y, button, pressed, save_directory, ftp_folder):
-    """鼠标点击事件"""
-    global screenshot_count, triple_click_time, capslock_pressed
+    """
+    鼠标点击事件处理
 
-    current_time = time.time()
+    参数:
+    x (int): 鼠标点击的 x 坐标
+    y (int): 鼠标点击的 y 坐标
+    button (mouse.Button): 点击的鼠标按钮
+    pressed (bool): 是否按下鼠标按钮
+    save_directory (str): 保存截图的目录
+    ftp_folder (str): FTP 服务器上的文件夹
+
+    返回:
+    None
+    """
+    global screenshot_count
 
     if pressed:
-        # 检测500ms内的三连击
-        mouse_click_times.append(current_time)
-        if len(mouse_click_times) >= 3 and current_time - mouse_click_times[-3] <= 0.5:
-            triple_click_time = current_time  # 标记三连击的时间
+        current_time = time.time()
 
-        # 判断是否触发截图（Caps Lock 长按 + 鼠标单击）
-        if capslock_pressed:
+        # 检测 Caps Lock 长按 + 鼠标单击
+        if capslock_pressed and button == mouse.Button.left:
             take_screenshot_and_upload(screenshot_count, save_directory, ftp_folder)
             screenshot_count += 1
-        elif triple_click_time and current_time - triple_click_time <= 2:
-            # 三连击后2秒内单击满足6~9次的条件进行截图
-            if detect_trigger(mouse_click_times, 6, 9):
+
+        # 检测 2 秒内单击 4 次滚轮
+        elif button == mouse.Button.middle:
+            wheel_click_times.append(current_time)
+            if detect_trigger(wheel_click_times, 4):
                 take_screenshot_and_upload(screenshot_count, save_directory, ftp_folder)
                 screenshot_count += 1
-                mouse_click_times.clear()  # 清空记录
+                wheel_click_times.clear()  # 清空滚轮单击记录
 
 def on_capslock_press(key):
-    """Caps Lock 按键事件"""
-    global capslock_pressed
+    """
+    Caps Lock 按键按下事件
 
+    参数:
+    key (keyboard.Key): 按下的按键
+
+    返回:
+    None
+    """
+    global capslock_pressed
     if key == keyboard.Key.caps_lock:
-        capslock_pressed = True  # 标记 Caps Lock 被长按
+        capslock_pressed = True
 
 def on_capslock_release(key):
-    """Caps Lock 释放事件"""
-    global capslock_pressed
+    """
+    Caps Lock 按键释放事件
 
+    参数:
+    key (keyboard.Key): 释放的按键
+
+    返回:
+    None
+    """
+    global capslock_pressed
     if key == keyboard.Key.caps_lock:
-        capslock_pressed = False  # 取消长按标记
+        capslock_pressed = False
 
 def start_listeners(save_directory, ftp_folder):
-    """启动鼠标和键盘监听器"""
+    """
+    启动鼠标和键盘监听器
+
+    参数:
+    save_directory (str): 保存截图的目录
+    ftp_folder (str): FTP 服务器上的文件夹
+
+    返回:
+    None
+    """
     print("监听鼠标和键盘中...")
 
+    # 启动鼠标和键盘监听器
     mouse_listener = mouse.Listener(
         on_click=lambda x, y, button, pressed: on_mouse_click(
             x, y, button, pressed, save_directory, ftp_folder
@@ -87,6 +147,3 @@ def start_listeners(save_directory, ftp_folder):
 
     mouse_listener.join()
     keyboard_listener.join()
-
-
-

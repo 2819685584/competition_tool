@@ -1,4 +1,3 @@
-import os
 import threading
 from tkinter import Tk, Label, Entry, Button, filedialog, StringVar, messagebox
 from upload import check_ftp_connection  # 导入 FTP 检测函数
